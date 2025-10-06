@@ -37,6 +37,7 @@
 #include <QClipboard>
 #include <QApplication>
 #include <QLabel>
+#include <QProcess>
 
 // #include "utils/TomahawkUtils.h"
 
@@ -47,128 +48,144 @@
 #define RESPATH ":/data/"
 #define PRODUCT_NAME "WaterWolf"
 
-CrashReporter::CrashReporter( const QUrl& url, const QStringList& args )
-: m_ui( 0 )
-, m_reply( 0 )
-, m_url( url )
+CrashReporter::CrashReporter(const QUrl& url, const QStringList& args)
+    : m_url(url)
 {
     m_ui = new Ui::CrashReporter();
-    m_ui->setupUi( this );
-    m_ui->progressBar->setRange( 0, 100 );
-    m_ui->progressBar->setValue( 0 );
-    m_ui->progressLabel->setPalette( Qt::gray );
+    m_ui->setupUi(this);
+    m_ui->progressBar->setRange(0, 100);
+    m_ui->progressBar->setValue(0);
+    m_ui->progressLabel->setPalette(Qt::gray);
 
-    #ifdef Q_OS_MAC
+#ifdef Q_OS_MAC
     QFont f = m_ui->bottomLabel->font();
-    f.setPointSize( 10 );
-    m_ui->bottomLabel->setFont( f );
-    f.setPointSize( 11 );
-    m_ui->progressLabel->setFont( f );
-    m_ui->progressLabel->setIndent( 3 );
-    #else
-    m_ui->vboxLayout->setSpacing( 16 );
-    m_ui->hboxLayout1->setSpacing( 16 );
-    m_ui->progressBar->setTextVisible( false );
-    m_ui->progressLabel->setIndent( 1 );
-    m_ui->bottomLabel->setDisabled( true );
-    m_ui->bottomLabel->setIndent( 1 );
-    #endif //Q_OS_MAC
+    f.setPointSize(10);
+    m_ui->bottomLabel->setFont(f);
+    f.setPointSize(11);
+    m_ui->progressLabel->setFont(f);
+    m_ui->progressLabel->setIndent(3);
+#else
+    m_ui->vboxLayout->setSpacing(16);
+    m_ui->hboxLayout1->setSpacing(16);
+    m_ui->progressBar->setTextVisible(false);
+    m_ui->progressLabel->setIndent(1);
+    m_ui->bottomLabel->setDisabled(true);
+    m_ui->bottomLabel->setIndent(1);
+#endif //Q_OS_MAC
 
-    m_request = new QNetworkRequest( m_url );
+    m_request = new QNetworkRequest(m_url);
 
-    m_minidump_file_path = args.value( 1 );
+    m_minidump_file_path = args.value(1);
 
     //hide until "send report" has been clicked
-    m_ui->progressBox->setVisible( false );
-    m_ui->progressLabel->setVisible( true );
-    m_ui->progressLabel->setText( QString() );
-    connect( m_ui->sendButton, SIGNAL( clicked() ), SLOT( onSendButton() ) );
+    m_ui->progressBox->setVisible(false);
+    m_ui->progressLabel->setVisible(true);
+    m_ui->progressLabel->setText(QString());
+    connect(m_ui->sendButton, SIGNAL(clicked()), SLOT(onSendButton()));
 
     adjustSize();
-    setFixedSize( size() );
+    setFixedSize(size());
 
 #ifdef ENABLE_GPL_CODE
-    if ( args.count() == 8 )
+    if (args.count() == 8)
     {
-        qDebug() << "These are all our args:" << args.join( ", " );
+        qDebug() << "These are all our args:" << args.join(", ");
         const CrashedApplication* app =
-            new CrashedApplication( args.value( 2 ).toInt(),
-                                    args.value( 3 ).toInt(),
-                                    args.value( 4 ),
-                                    QFileInfo( args.value( 5 ) ),
-                                    QFileInfo( args.value( 5 ) ).baseName(),
-                                    args.value( 6 ),
-                                    args.value( 7 ).toInt(),
-                                    QDateTime::currentDateTime() );
+            new CrashedApplication( args.value(2).toInt(),
+                                    args.value(3).toInt(),
+                                    args.value(4),
+                                    QFileInfo(args.value(5)),
+                                    QFileInfo(args.value(5)).baseName(),
+                                    args.value(6),
+                                    args.value(7).toInt(),
+                                    QDateTime::currentDateTime());
 
         m_btg = new BacktraceGenerator(
-                    Debugger::availableInternalDebuggers( "KCrash" ).first(),
+                    Debugger::availableInternalDebuggers("KCrash").first(),
                     app,
-                    this );
-        connect( m_btg, &BacktraceGenerator::failedToStart,
-                 this, [ = ]
-        {
+                    this);
+        connect(m_btg, &BacktraceGenerator::failedToStart, this, [=] {
             qDebug() << "Error: GDB failed to start.";
-            m_ui->progressLabel->setText( tr( "We cannot gather useful debug information on your system." ) );
-            m_ui->button->setText( tr( "Close" ) );
-        } );
-        connect( m_btg, &BacktraceGenerator::someError,
-                 this, [ = ]
-        {
+            m_ui->progressLabel->setText(tr("We cannot gather useful debug information on your system."));
+            m_ui->button->setText(tr("Close"));
+        });
+        connect(m_btg, &BacktraceGenerator::someError, this, [=] {
             qDebug() << "Error: GDB backtrace processing failed.";
             m_ui->progressLabel->setText( tr( "We cannot gather useful debug information on your system." ) );
             m_ui->button->setText( tr( "Close" ) );
-        } );
-        connect( m_btg, &BacktraceGenerator::done,
-                 this, [ = ]
-        {
+        });
+        connect( m_btg, &BacktraceGenerator::done, this, [=] {
             qDebug() << "Backtrace generation done.";
-            Q_ASSERT( m_btg->state() == BacktraceGenerator::Loaded );
+            Q_ASSERT(m_btg->state() == BacktraceGenerator::Loaded);
 
-            QString btPath = QString( "%1%2calamares-gdb-%3.txt" )
-                             .arg( QStandardPaths::writableLocation( QStandardPaths::TempLocation ) )
-                             .arg( QDir::separator() )
-                             .arg( QDateTime::currentMSecsSinceEpoch() );
-            QFile btFile( btPath );
-            if ( btFile.open( QFile::WriteOnly | QFile::Text ) )
+            QString btPath = QString("%1%2calamares-gdb-%3.txt")
+                             .arg(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                             .arg(QDir::separator())
+                             .arg(QDateTime::currentMSecsSinceEpoch());
+            QFile btFile(btPath);
+            if (btFile.open(QFile::WriteOnly | QFile::Text))
             {
-                QTextStream out( &btFile );
+                QTextStream out(&btFile);
                 out << m_btg->backtrace();
                 out.flush();
                 qDebug() << "GDB backtrace written to" << btPath;
 
-                setReportData( "upload_file_linux_backtrace",
-                                gzip_compress( m_btg->backtrace().toLocal8Bit() ),
+                setReportData("upload_file_linux_backtrace",
+                                gzip_compress(m_btg->backtrace().toLocal8Bit()),
                                 "application/x-gzip",
-                                QFileInfo( btFile ).fileName().toUtf8() );
-                kill( app->pid(), SIGKILL );
+                                QFileInfo(btFile).fileName().toUtf8());
+                kill(app->pid(), SIGKILL);
 
-                m_ui->progressBox->setVisible( false );
-                m_ui->sendBox->setVisible( true );
-                m_ui->progressLabel->setText( tr( "Ready to send debug information (<a "
-                                                  "href=\"%1\">view backtrace</a>)." )
-                                              .arg( QUrl::fromLocalFile( btPath ).toString( QUrl::FullyEncoded ) ) );
+                m_ui->progressBox->setVisible(false);
+                m_ui->sendBox->setVisible(true);
+                m_ui->progressLabel->setText(tr("Ready to send debug information (<a "
+                                                  "href=\"%1\">view backtrace</a>).")
+                                              .arg(QUrl::fromLocalFile(btPath).toString(QUrl::FullyEncoded)));
             }
             else
             {
                 qDebug() << "Cannot open file" << btPath << "to save the backtrace.";
-                m_ui->progressLabel->setText( tr( "We cannot gather useful debug information on your system." ) );
-                m_ui->button->setText( tr( "Close" ) );
+                m_ui->progressLabel->setText(tr("We cannot gather useful debug information on your system."));
+                m_ui->button->setText(tr("Close"));
             }
         });
 
         m_btg->start();
-        m_ui->progressBox->setVisible( true );
-        m_ui->sendBox->setVisible( false );
+        m_ui->progressBox->setVisible(true);
+        m_ui->sendBox->setVisible(false);
 
-        m_ui->progressLabel->setText( tr( "Gathering debug information..." ) );
-        m_ui->progressBar->setRange( 0, 0 );
+        m_ui->progressLabel->setText(tr("Gathering debug information..."));
+        m_ui->progressBar->setRange(0, 0);
     }
 #endif
 
     // set up handler for clicked the link in the label that is used to let the user copy the crash ID easily
     m_ui->progressLabel->setOpenExternalLinks(false);
     connect(m_ui->progressLabel, &QLabel::linkActivated, this, &CrashReporter::onLinkClicked);
+
+    m_ui->frameSend->setVisible(false);
+    m_ui->edDumpFile->setText(m_minidump_file_path);
+    connect(m_ui->btnShow, &QPushButton::clicked, this, [&] {
+#if defined(Q_OS_WIN)
+        QStringList cmdArgs;
+        cmdArgs.append(QString("/select,%1").arg(QDir::toNativeSeparators(m_minidump_file_path)));
+        QProcess::startDetached("explorer", cmdArgs);
+#elif defined(Q_OS_MAC)
+    QStringList args;
+    args << "-e";
+    args << "tell application \"Finder\"";
+    args << "-e";
+    args << "activate";
+    args << "-e";
+    args << "select POSIX file \"" + path + "\"";
+    args << "-e";
+    args << "end tell";
+    args << "-e";
+    args << "return";
+    QProcess::execute("/usr/bin/osascript", args);
+#endif
+    });
+
 }
 
 
@@ -179,64 +196,55 @@ CrashReporter::~CrashReporter()
 }
 
 
-void
-CrashReporter::setLogo( const QPixmap& logo )
+void CrashReporter::setLogo(const QPixmap& logo)
 {
-    m_ui->logoLabel->setPixmap( logo.scaled( QSize( 55, 55 ), Qt::KeepAspectRatio, Qt::SmoothTransformation ) );
-    setWindowIcon( logo );
+    m_ui->logoLabel->setPixmap(logo.scaled(QSize(55, 55), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    setWindowIcon(logo);
 }
 
-void
-CrashReporter::setText( const QString& text )
+void CrashReporter::setText(const QString& text)
 {
     m_ui->topLabel->setText(text);
 }
 
-void
-CrashReporter::setComment( const QString &text )
+void CrashReporter::setComment(const QString &text)
 {
     m_ui->commentTextEdit->setPlainText(text);
 }
 
-void
-CrashReporter::setBottomText( const QString& text )
+void CrashReporter::setBottomText(const QString& text)
 {
     m_ui->bottomLabel->setText(text);
     m_ui->bottomLabel->setVisible(!text.isEmpty());
 }
 
-static QByteArray
-contents( const QString& path )
+static QByteArray contents(const QString& path)
 {
-    QFile f( path );
-    f.open( QFile::ReadOnly );
+    QFile f(path);
+    f.open(QFile::ReadOnly);
     return f.readAll();
 }
 
-
-void
-CrashReporter::send()
+void CrashReporter::send()
 {
     // TODO: check if dump file actually exists ...
 
     // add minidump file
-    setReportData( "upload_file_minidump",
-        contents( m_minidump_file_path ),
+    setReportData("upload_file_minidump",
+        contents(m_minidump_file_path),
         "application/octet-stream",
-        QFileInfo( m_minidump_file_path ).fileName().toUtf8() );
-
+        QFileInfo(m_minidump_file_path).fileName().toUtf8());
 
     QByteArray body;
-    for(auto it = m_formContents.cbegin(); it != m_formContents.cend(); ++it)
+    for (auto it = m_formContents.cbegin(); it != m_formContents.cend(); ++it)
     {
         body += "--thkboundary\r\n";
-
         body += "Content-Disposition: form-data; name=\"" + it.key() + "\"";
 
-        if ( !m_formFileNames.value( it.key() ).isEmpty() && !m_formContentTypes.value( it.key() ).isEmpty() )
+        if (!m_formFileNames.value(it.key()).isEmpty() && !m_formContentTypes.value(it.key()).isEmpty())
         {
-            body += "; filename=\"" + m_formFileNames.value( it.key() ) + "\"\r\n";
-            body += "Content-Type: " + m_formContentTypes.value( it.key() ) + "\r\n";
+            body += "; filename=\"" + m_formFileNames.value(it.key()) + "\"\r\n";
+            body += "Content-Type: " + m_formContentTypes.value(it.key()) + "\r\n";
         }
         else
         {
@@ -244,108 +252,94 @@ CrashReporter::send()
         }
 
         body += "\r\n";
-
         body += it.value() + "\r\n";
     }
 
     body += "--thkboundary\r\n";
 
+    QNetworkAccessManager* nam = new QNetworkAccessManager(this);
+    m_request->setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("multipart/form-data; boundary=thkboundary"));
+    m_reply = nam->post(*m_request, body);
 
-    QNetworkAccessManager* nam = new QNetworkAccessManager( this );
-    m_request->setHeader( QNetworkRequest::ContentTypeHeader, QStringLiteral("multipart/form-data; boundary=thkboundary"));
-    m_reply = nam->post( *m_request, body );
-
-    #if QT_VERSION < QT_VERSION_CHECK( 5, 0, 0 )
-    connect( m_reply, SIGNAL( finished() ), SLOT( onDone() ), Qt::QueuedConnection );
-    connect( m_reply, SIGNAL( uploadProgress( qint64, qint64 ) ), SLOT( onProgress( qint64, qint64 ) ) );
-    #else
-    connect( m_reply, &QNetworkReply::finished, this, &CrashReporter::onDone, Qt::QueuedConnection );
-    connect( m_reply, &QNetworkReply::uploadProgress, this, &CrashReporter::onProgress );
-    #endif
+#if QT_VERSION < QT_VERSION_CHECK( 5, 0, 0 )
+    connect(m_reply, SIGNAL(finished()), SLOT(onDone()), Qt::QueuedConnection);
+    connect(m_reply, SIGNAL(uploadProgress(qint64, qint64)), SLOT(onProgress(qint64, qint64)));
+#else
+    connect(m_reply, &QNetworkReply::finished, this, &CrashReporter::onDone, Qt::QueuedConnection);
+    connect(m_reply, &QNetworkReply::uploadProgress, this, &CrashReporter::onProgress);
+#endif
 }
 
-
-void
-CrashReporter::onProgress( qint64 done, qint64 total )
+void CrashReporter::onProgress(qint64 done, qint64 total)
 {
-    if ( total )
+    if (total)
     {
-        QString const msg = tr( "Uploaded %L1 of %L2 KB." ).arg( done / 1024 ).arg( total / 1024 );
+        QString const msg = tr("Uploaded %L1 of %L2 KB.").arg(done / 1024).arg(total / 1024);
 
-        m_ui->progressBar->setMaximum( total );
-        m_ui->progressBar->setValue( done );
-        m_ui->progressLabel->setText( msg );
+        m_ui->progressBar->setMaximum(total);
+        m_ui->progressBar->setValue(done);
+        m_ui->progressLabel->setText(msg);
     }
 }
 
-
-void
-CrashReporter::onDone()
+void CrashReporter::onDone()
 {
     QByteArray data = m_reply->readAll();
-    m_ui->progressBar->setValue( m_ui->progressBar->maximum() );
-    m_ui->button->setText( tr( "Close" ) );
+    m_ui->progressBar->setValue(m_ui->progressBar->maximum());
+    m_ui->button->setText(tr("Close"));
 
-    QString const response = QString::fromUtf8( data );
+    QString const response = QString::fromUtf8(data);
     qDebug() << "RESPONSE:" << response;
 
-    if ( ( m_reply->error() != QNetworkReply::NoError ) || !response.startsWith( QStringLiteral("CrashID=") ) )
+    if ((m_reply->error() != QNetworkReply::NoError) || !response.startsWith(QStringLiteral("CrashID=")))
     {
-        onFail( m_reply->error(), m_reply->errorString() );
+        onFail(m_reply->error(), m_reply->errorString());
     }
     else
     {
         QString crashId = response.split(QLatin1Char('\n')).at(0).split(QLatin1Char('=')).at(1);
 
-        m_ui->progressLabel->setText( tr( "Sent! <b>Many thanks</b>. Please refer to crash <a href=\"clipboard://%1\"><b>%1</b></a> (click to copy) in bug reports." ).arg(crashId) );
+        m_ui->progressLabel->setText(tr( "Sent! <b>Many thanks</b>. Please refer to crash <a href=\"clipboard://%1\"><b>%1</b></a> (click to copy) in bug reports." ).arg(crashId));
     }
 }
 
-
-void
-CrashReporter::onFail( int error, const QString& errorString )
+void CrashReporter::onFail(int error, const QString& errorString)
 {
-    m_ui->button->setText( tr( "Close" ) );
-    m_ui->progressLabel->setText( tr( "Failed to send crash info." ) );
+    m_ui->button->setText(tr("Close"));
+    m_ui->progressLabel->setText(tr("Failed to send crash info."));
     qDebug() << "Error:" << error << errorString;
 }
 
-
-void
-CrashReporter::onSendButton()
+void CrashReporter::onSendButton()
 {
-    m_ui->progressBox->setVisible( true );
-    m_ui->sendBox->setVisible( false );
+    m_ui->progressBox->setVisible(true);
+    m_ui->sendBox->setVisible(false);
+    m_ui->commentTextEdit->setEnabled(false);
 
-    m_ui->commentTextEdit->setEnabled( false );
-
-    setReportData( "Comments", m_ui->commentTextEdit->toPlainText().toUtf8() );
+    setReportData("Comments", m_ui->commentTextEdit->toPlainText().toUtf8());
     adjustSize();
-    setFixedSize( size() );
+    setFixedSize(size());
 
-    QTimer::singleShot( 0, this, SLOT( send() ) );
+    QTimer::singleShot(0, this, SLOT(send()));
 }
 
-void
-CrashReporter::setReportData(const QByteArray& name, const QByteArray& content)
+void CrashReporter::setReportData(const QByteArray& name, const QByteArray& content)
 {
-    m_formContents.insert( name, content );
+    m_formContents.insert(name, content);
 }
 
-void
-CrashReporter::setReportData(const QByteArray& name, const QByteArray& content, const QByteArray& contentType, const QByteArray& fileName)
+void CrashReporter::setReportData(const QByteArray& name, const QByteArray& content, const QByteArray& contentType, const QByteArray& fileName)
 {
-    setReportData( name, content );
+    setReportData(name, content);
 
-    if( !contentType.isEmpty() && !fileName.isEmpty() )
+    if (!contentType.isEmpty() && !fileName.isEmpty())
     {
-        m_formContentTypes.insert( name, contentType );
-        m_formFileNames.insert( name, fileName );
+        m_formContentTypes.insert(name, contentType);
+        m_formFileNames.insert(name, fileName);
     }
 }
 
-void
-CrashReporter::onLinkClicked(const QString& link)
+void CrashReporter::onLinkClicked(const QString& link)
 {
     // we just have to handle clipboard "links", used to let the user copy the crash ID easily
     // other links can be ignored
