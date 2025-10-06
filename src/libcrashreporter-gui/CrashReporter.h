@@ -54,14 +54,14 @@ public:
     void setReportData(const QByteArray& name, const QByteArray& content, const QByteArray& contentType, const QByteArray& fileName);
 
 private:
-    Ui::CrashReporter* m_ui;
+    Ui::CrashReporter* m_ui = nullptr;
 #ifdef ENABLE_GPL_CODE
-    BacktraceGenerator* m_btg;
+    BacktraceGenerator* m_btg = nullptr;
 #endif
 
     QString m_minidump_file_path;
-    QNetworkRequest* m_request;
-    QNetworkReply* m_reply;
+    QNetworkRequest* m_request = nullptr;
+    QNetworkReply* m_reply = nullptr;
     QUrl m_url;
 
     QMap < QByteArray, QByteArray > m_formContents;
