@@ -177,7 +177,7 @@ CrashReporter::CrashReporter(const QUrl& url, const QStringList& args)
     args << "-e";
     args << "activate";
     args << "-e";
-    args << "select POSIX file \"" + path + "\"";
+    args << "select POSIX file \"" + m_minidump_file_path + "\"";
     args << "-e";
     args << "end tell";
     args << "-e";
